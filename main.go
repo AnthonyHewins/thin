@@ -40,7 +40,15 @@ func newApp() (*app, error) {
 	}
 
 	if *secret == "" {
-		*secret = os.Getenv("SECRET")
+		if *secret = os.Getenv("SECRET"); *secret == "" {
+			l.Error("missing secret")
+			return nil, fmt.Errorf("missing secret")
+		}
+	}
+
+	if *command == "" {
+		l.Error("missing command")
+		return nil, fmt.Errorf("missing command")
 	}
 
 	p := *port
@@ -77,7 +85,7 @@ func logger(logSrc bool, logLvl, logFmt string) (*slog.Logger, error) {
 }
 
 func kill(err error) {
-	fmt.Fprintln(os.Stderr, err)
+	fmt.Println(err)
 	os.Exit(1)
 }
 

@@ -1,6 +1,13 @@
 #! /bin/bash
 set -euo pipefail
 
+tmp=$(mktemp -d)
+cleanup() {
+    rm -r $tmp
+}
+
+trap cleanup ERR
+
 external=14809
 internal=14810
 server=""
@@ -15,7 +22,7 @@ help() {
     echo "  -s  Server name for nginx"
 }
 
-while getopts "he:i:" flag; do
+while getopts "he:i:s:" flag; do
 case $flag in
     h) help; exit 0;;
     e) external=$OPTARG;;
@@ -33,31 +40,35 @@ fi
 
 echo "Using nginx port $external and internal port $internal for thin"
 echo "Server name: $server"
+
+s="systemctl --user"
+
 set -x
 
 sudo apt update
 sudo apt install -y nginx openssl
 
-dir=$(mktemp -d)
-git clone github.com/AnthonyHewins/thin $dir
+mkdir -p ~/.local/bin
+git clone git@github.com:AnthonyHewins/thin.git $tmp
 cd $dir
-make -f $dir/Makefile thin
-mv $dir
+make thin
+mv bin/thin ~/.local/bin
+cleanup
 
 dir=/etc/nginx
-mkdir -p $dir/conf.d $dir/ssl
+sudo mkdir -p $dir/conf.d $dir/ssl
 dir+=/ssl
-openssl genrsa -out $dir/selfsigned.key 2048
-openssl req -new -key $dir/selfsigned.key -out $dir/selfsigned.csr
-openssl x509 -req -days 3650 -in $dir/selfsigned.csr -signkey $dir/selfsigned.key -out $dir/selfsigned.crt
+sudo openssl genrsa -out $dir/selfsigned.key 2048
+sudo openssl req -new -key $dir/selfsigned.key -out $dir/selfsigned.csr
+sudo openssl x509 -req -days 3650 -in $dir/selfsigned.csr -signkey $dir/selfsigned.key -out $dir/selfsigned.crt
 
 dir=/etc/nginx
-cat <<EOF > $dir/conf.d/selfsigned.conf
+cat <<EOF | sudo tee $dir/conf.d/selfsigned.conf
 ssl_certificate /etc/nginx/ssl/selfsigned.crt;
 ssl_certificate_key /etc/nginx/ssl/selfsigned.key;
 EOF
 
-cat <<EOF > $dir/sites-available/thin-webhook.conf
+cat <<EOF | sudo tee $dir/sites-available/thin-webhook.conf
 server {
     listen $external ssl;
 
@@ -73,10 +84,13 @@ server {
     }
 }
 EOF
+cd $dir/sites-enabled
+ln -s ../sites-available/thin-webhook.conf thin-webhook
+sudo systemctl restart nginx
 
 dir=~/.config/systemd/user
 mkdir -p $dir
-echo <<EOF > $dir/thin.service
+cat <<EOF > $dir/thin.service
 [Unit]
 Description=Github webhook server
 
@@ -89,3 +103,7 @@ ExecStart=/home/%u/.local/bin/thin
 [Install]
 WantedBy=default.target
 EOF
+
+s daemon-reload
+s enable thin.service
+s start thin.service
