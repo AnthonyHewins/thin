@@ -84,15 +84,11 @@ func logger(logSrc bool, logLvl, logFmt string) (*slog.Logger, error) {
 	return slog.New(h), nil
 }
 
-func kill(err error) {
-	fmt.Println(err)
-	os.Exit(1)
-}
-
 func main() {
 	a, err := newApp()
 	if err != nil {
-		kill(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -125,14 +121,15 @@ func main() {
 			}
 		}
 
+		a.Info("starting run")
+
 		c := exec.Command(a.cmd)
 		c.Stdin = bytes.NewReader(buf)
 		if err = c.Run(); err != nil {
 			a.Error("command errored", "err", err)
-			return
 		}
 
-		a.Info("successful CI run")
+		fmt.Println(c.CombinedOutput())
 	})
 
 	http.ListenAndServe(fmt.Sprintf(":%d", a.port), nil)
